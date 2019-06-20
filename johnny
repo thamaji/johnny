@@ -1,0 +1,28 @@
+#!/bin/bash
+set -e -u
+
+gopath=$(go env GOPATH)
+goversion=$(go version | awk '{gsub("go",""); print $2}')
+
+if [[ "$(pwd)" != "${gopath}"* ]]; then
+    echo "should execute under GOPATH"
+    exit 1
+fi
+
+path=$(realpath --relative-to=$(go env GOPATH) $(pwd))
+
+image=$(cat <<EOS | docker build -q --force-rm -
+FROM golang:${goversion}
+RUN groupadd --gid $(id -g) user && useradd --uid $(id -u) --gid $(id -g) --create-home --home-dir /home/user --shell /bin/bash user
+USER user
+EOS
+)
+
+read -p "Enter github username: " username
+read -sp "Enter github password: " password && echo
+
+cat <<EOS | docker run -i --rm -v "$(go env GOPATH):/go" -w "/go/${path}" --net host "${image}"
+git config --global credential.helper "store --file /home/user/.git-credentials"
+echo "https://${username}:${password}@github.com" > /home/user/.git-credentials
+${@}
+EOS
